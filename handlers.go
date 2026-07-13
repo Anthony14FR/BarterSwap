@@ -55,12 +55,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
-	var in User
-	if err := decodeJSON(r, &in); err != nil {
+	var req userRequest
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, err)
 		return
 	}
-	user, err := s.app.CreateUser(r.Context(), in)
+	user, err := s.app.CreateUser(r.Context(), req.toUser())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -93,12 +93,12 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	var in User
-	if err := decodeJSON(r, &in); err != nil {
+	var req userRequest
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, err)
 		return
 	}
-	user, err := s.app.UpdateUser(r.Context(), actor, id, in)
+	user, err := s.app.UpdateUser(r.Context(), actor, id, req.toUser())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -385,6 +385,20 @@ func (s *Server) createReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, review)
+}
+
+type userRequest struct {
+	Pseudo string `json:"pseudo"`
+	Bio    string `json:"bio"`
+	Ville  string `json:"ville"`
+}
+
+func (req userRequest) toUser() User {
+	return User{
+		Pseudo: req.Pseudo,
+		Bio:    req.Bio,
+		Ville:  req.Ville,
+	}
 }
 
 type serviceRequest struct {

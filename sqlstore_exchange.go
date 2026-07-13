@@ -20,7 +20,7 @@ func (s *SQLStore) CreateExchange(ctx context.Context, e Exchange) (Exchange, er
 		return Exchange{}, conflictError("le service %d a déjà un échange en cours", e.ServiceID)
 	}
 	if err != nil {
-		return Exchange{}, err
+		return Exchange{}, fmt.Errorf("création échange: %w", err)
 	}
 	e.Status = StatusPending
 	e.CreatedAt = ts(created)
@@ -35,7 +35,10 @@ func (s *SQLStore) GetExchange(ctx context.Context, id int) (Exchange, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return Exchange{}, notFoundError("échange %d introuvable", id)
 	}
-	return e, err
+	if err != nil {
+		return Exchange{}, fmt.Errorf("récupération échange: %w", err)
+	}
+	return e, nil
 }
 
 func (s *SQLStore) ListExchanges(ctx context.Context, userID int, status string) ([]Exchange, error) {
@@ -50,7 +53,7 @@ func (s *SQLStore) ListExchanges(ctx context.Context, userID int, status string)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("liste échanges: %w", err)
 	}
 	defer rows.Close()
 
@@ -58,23 +61,26 @@ func (s *SQLStore) ListExchanges(ctx context.Context, userID int, status string)
 	for rows.Next() {
 		e, err := scanExchange(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("liste échanges: %w", err)
 		}
 		exchanges = append(exchanges, e)
 	}
-	return exchanges, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("liste échanges: %w", err)
+	}
+	return exchanges, nil
 }
 
 func (s *SQLStore) TransitionExchange(ctx context.Context, id int, from, to string, txns []CreditTransaction) (Exchange, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Exchange{}, err
+		return Exchange{}, fmt.Errorf("transition échange: %w", err)
 	}
 	defer tx.Rollback()
 
 	for _, uid := range debitedUserIDs(txns) {
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, uid); err != nil {
-			return Exchange{}, err
+			return Exchange{}, fmt.Errorf("transition échange: %w", err)
 		}
 	}
 
@@ -87,7 +93,7 @@ func (s *SQLStore) TransitionExchange(ctx context.Context, id int, from, to stri
 		return Exchange{}, s.transitionConflict(ctx, id, from)
 	}
 	if err != nil {
-		return Exchange{}, err
+		return Exchange{}, fmt.Errorf("transition échange: %w", err)
 	}
 
 	for _, uid := range debitedUserIDs(txns) {
@@ -95,7 +101,7 @@ func (s *SQLStore) TransitionExchange(ctx context.Context, id int, from, to stri
 		if err := tx.QueryRowContext(ctx,
 			`SELECT COALESCE(SUM(montant), 0) FROM credit_transactions WHERE user_id = $1`, uid,
 		).Scan(&balance); err != nil {
-			return Exchange{}, err
+			return Exchange{}, fmt.Errorf("transition échange: %w", err)
 		}
 		if cost := debitTotal(txns, uid); balance < cost {
 			return Exchange{}, fmt.Errorf("solde %d, coût %d: %w", balance, cost, ErrInsufficientCredits)
@@ -107,12 +113,12 @@ func (s *SQLStore) TransitionExchange(ctx context.Context, id int, from, to stri
 			`INSERT INTO credit_transactions (user_id, exchange_id, montant, type) VALUES ($1, $2, $3, $4)`,
 			t.UserID, id, t.Montant, t.Type,
 		); err != nil {
-			return Exchange{}, err
+			return Exchange{}, fmt.Errorf("transition échange: %w", err)
 		}
 	}
 
 	if err = tx.Commit(); err != nil {
-		return Exchange{}, err
+		return Exchange{}, fmt.Errorf("transition échange: %w", err)
 	}
 	return e, nil
 }
@@ -120,7 +126,7 @@ func (s *SQLStore) TransitionExchange(ctx context.Context, id int, from, to stri
 func (s *SQLStore) transitionConflict(ctx context.Context, id int, from string) error {
 	exists, err := s.exchangeExists(ctx, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("transition échange: %w", err)
 	}
 	if !exists {
 		return notFoundError("échange %d introuvable", id)
@@ -131,7 +137,10 @@ func (s *SQLStore) transitionConflict(ctx context.Context, id int, from string) 
 func (s *SQLStore) exchangeExists(ctx context.Context, id int) (bool, error) {
 	var exists bool
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM exchanges WHERE id = $1)`, id).Scan(&exists)
-	return exists, err
+	if err != nil {
+		return false, fmt.Errorf("vérification existence échange: %w", err)
+	}
+	return exists, nil
 }
 
 func (s *SQLStore) Balance(ctx context.Context, userID int) (int, error) {
@@ -139,7 +148,10 @@ func (s *SQLStore) Balance(ctx context.Context, userID int) (int, error) {
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(montant), 0) FROM credit_transactions WHERE user_id = $1`, userID,
 	).Scan(&balance)
-	return balance, err
+	if err != nil {
+		return 0, fmt.Errorf("solde utilisateur: %w", err)
+	}
+	return balance, nil
 }
 
 func (s *SQLStore) CreateReview(ctx context.Context, r Review) (Review, error) {
@@ -153,7 +165,7 @@ func (s *SQLStore) CreateReview(ctx context.Context, r Review) (Review, error) {
 		return Review{}, conflictError("un avis existe déjà pour cet échange")
 	}
 	if err != nil {
-		return Review{}, err
+		return Review{}, fmt.Errorf("création avis: %w", err)
 	}
 	r.CreatedAt = ts(created)
 	return r, nil
@@ -165,7 +177,10 @@ func (s *SQLStore) ReviewExists(ctx context.Context, exchangeID, authorID int) (
 		`SELECT EXISTS(SELECT 1 FROM reviews WHERE exchange_id = $1 AND author_id = $2)`,
 		exchangeID, authorID,
 	).Scan(&exists)
-	return exists, err
+	if err != nil {
+		return false, fmt.Errorf("vérification avis existant: %w", err)
+	}
+	return exists, nil
 }
 
 func (s *SQLStore) ReviewsByUser(ctx context.Context, targetID int) ([]Review, error) {
@@ -184,7 +199,7 @@ func (s *SQLStore) ReviewsByService(ctx context.Context, serviceID int) ([]Revie
 func (s *SQLStore) queryReviews(ctx context.Context, query string, args ...any) ([]Review, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("liste avis: %w", err)
 	}
 	defer rows.Close()
 
@@ -193,18 +208,21 @@ func (s *SQLStore) queryReviews(ctx context.Context, query string, args ...any) 
 		var r Review
 		var created time.Time
 		if err := rows.Scan(&r.ID, &r.ExchangeID, &r.AuthorID, &r.TargetID, &r.Note, &r.Commentaire, &created); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("liste avis: %w", err)
 		}
 		r.CreatedAt = ts(created)
 		reviews = append(reviews, r)
 	}
-	return reviews, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("liste avis: %w", err)
+	}
+	return reviews, nil
 }
 
 func (s *SQLStore) UserStats(ctx context.Context, id int) (UserStats, error) {
 	exists, err := s.UserExists(ctx, id)
 	if err != nil {
-		return UserStats{}, err
+		return UserStats{}, fmt.Errorf("statistiques utilisateur: %w", err)
 	}
 	if !exists {
 		return UserStats{}, notFoundError("utilisateur %d introuvable", id)
@@ -215,19 +233,19 @@ func (s *SQLStore) UserStats(ctx context.Context, id int) (UserStats, error) {
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM services WHERE provider_id = $1 AND actif = TRUE`, id,
 	).Scan(&stats.ServicesActifs); err != nil {
-		return UserStats{}, err
+		return UserStats{}, fmt.Errorf("statistiques utilisateur: %w", err)
 	}
 
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM exchanges WHERE (requester_id = $1 OR owner_id = $1) AND status = 'completed'`, id,
 	).Scan(&stats.EchangesCompletes); err != nil {
-		return UserStats{}, err
+		return UserStats{}, fmt.Errorf("statistiques utilisateur: %w", err)
 	}
 
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(AVG(note), 0), COUNT(*) FROM reviews WHERE target_id = $1`, id,
 	).Scan(&stats.NoteMoyenne, &stats.NbAvis); err != nil {
-		return UserStats{}, err
+		return UserStats{}, fmt.Errorf("statistiques utilisateur: %w", err)
 	}
 
 	if err := s.db.QueryRowContext(ctx,
@@ -237,7 +255,7 @@ func (s *SQLStore) UserStats(ctx context.Context, id int) (UserStats, error) {
 		   COALESCE(SUM(montant), 0)
 		 FROM credit_transactions WHERE user_id = $1`, id,
 	).Scan(&stats.TotalGagne, &stats.TotalDepense, &stats.CreditBalance); err != nil {
-		return UserStats{}, err
+		return UserStats{}, fmt.Errorf("statistiques utilisateur: %w", err)
 	}
 
 	return stats, nil
@@ -251,7 +269,7 @@ func scanExchange(row rowScanner) (Exchange, error) {
 	var e Exchange
 	var created, updated time.Time
 	if err := row.Scan(&e.ID, &e.ServiceID, &e.RequesterID, &e.OwnerID, &e.Status, &created, &updated); err != nil {
-		return Exchange{}, err
+		return Exchange{}, fmt.Errorf("lecture échange: %w", err)
 	}
 	e.CreatedAt = ts(created)
 	e.UpdatedAt = ts(updated)
