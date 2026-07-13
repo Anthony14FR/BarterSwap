@@ -309,8 +309,8 @@ func (m *memStore) UserStats(ctx context.Context, id int) (UserStats, error) {
 func TestMemStoreTransitionExchangeInsufficientCredits(t *testing.T) {
 	m := newMemStore()
 	ctx := context.Background()
-	requester, _ := m.CreateUser(ctx, User{Pseudo: "requester"}, welcomeCredits)
-	owner, _ := m.CreateUser(ctx, User{Pseudo: "owner"}, welcomeCredits)
+	requester, _ := m.CreateUser(ctx, User{Pseudo: "Thami"}, welcomeCredits)
+	owner, _ := m.CreateUser(ctx, User{Pseudo: "Tom"}, welcomeCredits)
 
 	ex1, _ := m.CreateExchange(ctx, Exchange{ServiceID: 1, RequesterID: requester.ID, OwnerID: owner.ID})
 	ex2, _ := m.CreateExchange(ctx, Exchange{ServiceID: 2, RequesterID: requester.ID, OwnerID: owner.ID})

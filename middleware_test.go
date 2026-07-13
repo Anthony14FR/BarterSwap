@@ -49,7 +49,7 @@ func TestCORSMiddlewareOptions(t *testing.T) {
 
 func TestAuthInvalidUserIDHeaderTreatedAsAnonymous(t *testing.T) {
 	api := newAPITest(t)
-	_, svc := api.seedService("provider", "Jardinage", 3)
+	_, svc := api.seedService("Tom", "Jardinage", 3)
 	body, _ := json.Marshal(map[string]any{
 		"titre": "Nouveau titre", "categorie": "Jardinage", "duree_minutes": 30, "credits": 2,
 	})

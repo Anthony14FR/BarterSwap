@@ -92,25 +92,25 @@ Le solde de chaque utilisateur est calculé à partir d'un **journal de transact
 ```bash
 # 1. Créer deux utilisateurs (10 crédits de bienvenue chacun)
 curl -s -X POST localhost:8080/api/users \
-  -d '{"pseudo":"alice","ville":"Paris"}'
+  -d '{"pseudo":"Tom","ville":"Paris"}'
 curl -s -X POST localhost:8080/api/users \
-  -d '{"pseudo":"bob","ville":"Lyon"}'
+  -d '{"pseudo":"Thami","ville":"Lyon"}'
 
-# 2. Alice (id 1) déclare ses compétences puis publie un service
+# 2. Tom (id 1) déclare ses compétences puis publie un service
 curl -s -X PUT localhost:8080/api/users/1/skills -H 'X-UserID: 1' \
   -d '[{"nom":"Jardinage","niveau":"expert"}]'
 curl -s -X POST localhost:8080/api/services -H 'X-UserID: 1' \
   -d '{"titre":"Tonte de pelouse","categorie":"Jardinage","duree_minutes":60,"credits":4,"ville":"Paris"}'
 
-# 3. Bob (id 2) demande l'échange sur le service 1
+# 3. Thami (id 2) demande l'échange sur le service 1
 curl -s -X POST localhost:8080/api/exchanges -H 'X-UserID: 2' \
   -d '{"service_id":1}'
 
-# 4. Alice accepte (crédits bloqués), puis on termine (crédits transférés)
+# 4. Tom accepte (crédits bloqués), puis on termine (crédits transférés)
 curl -s -X PUT localhost:8080/api/exchanges/1/accept   -H 'X-UserID: 1'
 curl -s -X PUT localhost:8080/api/exchanges/1/complete -H 'X-UserID: 1'
 
-# 5. Bob note l'échange terminé, puis on consulte les stats d'Alice
+# 5. Thami note l'échange terminé, puis on consulte les stats de Tom
 curl -s -X POST localhost:8080/api/exchanges/1/review -H 'X-UserID: 2' \
   -d '{"note":5,"commentaire":"Impeccable"}'
 curl -s localhost:8080/api/users/1/stats

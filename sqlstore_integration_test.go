@@ -37,10 +37,10 @@ func integrationAPI(t *testing.T) *apiTest {
 func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 	api := integrationAPI(t)
 
-	provider := api.createUser("provider")
+	provider := api.createUser("Tom")
 
 	if rec := api.do(http.MethodPut, fmt.Sprintf("/api/users/%d", provider.ID), provider.ID,
-		map[string]string{"pseudo": "provider2", "bio": "jardinier", "ville": "Paris"}); rec.Code != http.StatusOK {
+		map[string]string{"pseudo": "Thami", "bio": "jardinier", "ville": "Paris"}); rec.Code != http.StatusOK {
 		t.Fatalf("modification profil: code %d, corps %s", rec.Code, rec.Body)
 	}
 
@@ -88,8 +88,8 @@ func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 
 func TestIntegrationExchangeHappyPath(t *testing.T) {
 	api := integrationAPI(t)
-	provider, svc := api.seedService("provider", "Jardinage", 4)
-	requester := api.createUser("requester")
+	provider, svc := api.seedService("Tom", "Jardinage", 4)
+	requester := api.createUser("Thami")
 
 	rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
 	if rec.Code != http.StatusCreated {
@@ -137,8 +137,8 @@ func TestIntegrationExchangeHappyPath(t *testing.T) {
 
 func TestIntegrationRejectAndCancelRefund(t *testing.T) {
 	api := integrationAPI(t)
-	provider, svc := api.seedService("provider", "Jardinage", 5)
-	requester := api.createUser("requester")
+	provider, svc := api.seedService("Tom", "Jardinage", 5)
+	requester := api.createUser("Thami")
 
 	// reject
 	rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
@@ -166,9 +166,9 @@ func TestIntegrationRejectAndCancelRefund(t *testing.T) {
 
 func TestIntegrationExchangeConflict(t *testing.T) {
 	api := integrationAPI(t)
-	_, svc := api.seedService("provider", "Jardinage", 3)
-	r1 := api.createUser("r1")
-	r2 := api.createUser("r2")
+	_, svc := api.seedService("Tom", "Jardinage", 3)
+	r1 := api.createUser("Thami")
+	r2 := api.createUser("Flo")
 
 	if rec := api.do(http.MethodPost, "/api/exchanges", r1.ID, map[string]int{"service_id": svc.ID}); rec.Code != http.StatusCreated {
 		t.Fatalf("premier échange: code %d", rec.Code)
@@ -180,7 +180,7 @@ func TestIntegrationExchangeConflict(t *testing.T) {
 
 func TestIntegrationConcurrentAcceptInsufficientCredits(t *testing.T) {
 	api := integrationAPI(t)
-	requester := api.createUser("requester") // solde = welcomeCredits (10)
+	requester := api.createUser("Thami") // solde = welcomeCredits (10)
 
 	const (
 		numServices = 5
@@ -194,7 +194,7 @@ func TestIntegrationConcurrentAcceptInsufficientCredits(t *testing.T) {
 	}
 	pairs := make([]pending, numServices)
 	for i := 0; i < numServices; i++ {
-		provider, svc := api.seedService(fmt.Sprintf("provider%d", i), "Jardinage", serviceCost)
+		provider, svc := api.seedService(fmt.Sprintf("Tom%d", i), "Jardinage", serviceCost)
 		rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("création échange %d: code %d, corps %s", i, rec.Code, rec.Body)

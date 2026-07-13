@@ -23,7 +23,7 @@ func mustUser(t *testing.T, a *App, pseudo string) User {
 func seedProviderService(t *testing.T, a *App, credits int) (User, Service) {
 	t.Helper()
 	ctx := context.Background()
-	provider := mustUser(t, a, "provider")
+	provider := mustUser(t, a, "Tom")
 	if _, err := a.SetSkills(ctx, provider.ID, provider.ID, []Skill{{Nom: "Jardinage", Niveau: "expert"}}); err != nil {
 		t.Fatalf("compétences: %v", err)
 	}
@@ -38,7 +38,7 @@ func seedProviderService(t *testing.T, a *App, credits int) (User, Service) {
 
 func TestCreateUserWelcomeCredits(t *testing.T) {
 	a, _ := newTestApp()
-	u, err := a.CreateUser(context.Background(), User{Pseudo: "alice"})
+	u, err := a.CreateUser(context.Background(), User{Pseudo: "Tom"})
 	if err != nil {
 		t.Fatalf("erreur inattendue: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestCreateUserInvalidPseudo(t *testing.T) {
 func TestCreateServiceRequiresSkill(t *testing.T) {
 	a, _ := newTestApp()
 	ctx := context.Background()
-	provider := mustUser(t, a, "provider")
+	provider := mustUser(t, a, "Tom")
 
 	_, err := a.CreateService(ctx, provider.ID, Service{
 		Titre: "Cours de piano", Categorie: "Musique", DureeMinutes: 45, Credits: 3,
@@ -100,7 +100,7 @@ func TestCreateExchangeOwnService(t *testing.T) {
 func TestCreateExchangeInsufficientCredits(t *testing.T) {
 	a, _ := newTestApp()
 	_, service := seedProviderService(t, a, 20)
-	requester := mustUser(t, a, "requester")
+	requester := mustUser(t, a, "Thami")
 	_, err := a.CreateExchange(context.Background(), requester.ID, service.ID)
 	if !errors.Is(err, ErrInsufficientCredits) {
 		t.Errorf("attendu ErrInsufficientCredits, obtenu %v", err)
@@ -111,8 +111,8 @@ func TestCreateExchangeConflict(t *testing.T) {
 	a, _ := newTestApp()
 	ctx := context.Background()
 	_, service := seedProviderService(t, a, 3)
-	r1 := mustUser(t, a, "r1")
-	r2 := mustUser(t, a, "r2")
+	r1 := mustUser(t, a, "Thami")
+	r2 := mustUser(t, a, "Flo")
 
 	if _, err := a.CreateExchange(ctx, r1.ID, service.ID); err != nil {
 		t.Fatalf("premier échange: %v", err)
@@ -127,7 +127,7 @@ func TestExchangeLifecycleCredits(t *testing.T) {
 	a, store := newTestApp()
 	ctx := context.Background()
 	provider, service := seedProviderService(t, a, 4)
-	requester := mustUser(t, a, "requester")
+	requester := mustUser(t, a, "Thami")
 
 	ex, err := a.CreateExchange(ctx, requester.ID, service.ID)
 	if err != nil {
@@ -156,7 +156,7 @@ func TestExchangeCancelRefund(t *testing.T) {
 	a, store := newTestApp()
 	ctx := context.Background()
 	provider, service := seedProviderService(t, a, 5)
-	requester := mustUser(t, a, "requester")
+	requester := mustUser(t, a, "Thami")
 
 	ex, err := a.CreateExchange(ctx, requester.ID, service.ID)
 	if err != nil {
@@ -177,7 +177,7 @@ func TestReviewRules(t *testing.T) {
 	a, _ := newTestApp()
 	ctx := context.Background()
 	provider, service := seedProviderService(t, a, 3)
-	requester := mustUser(t, a, "requester")
+	requester := mustUser(t, a, "Thami")
 	ex, _ := a.CreateExchange(ctx, requester.ID, service.ID)
 
 	if _, err := a.CreateReview(ctx, requester.ID, ex.ID, Review{Note: 5}); !errors.Is(err, ErrValidation) {
@@ -206,7 +206,7 @@ func TestUserStats(t *testing.T) {
 	a, _ := newTestApp()
 	ctx := context.Background()
 	provider, service := seedProviderService(t, a, 4)
-	requester := mustUser(t, a, "requester")
+	requester := mustUser(t, a, "Thami")
 	ex, _ := a.CreateExchange(ctx, requester.ID, service.ID)
 	if _, err := a.AcceptExchange(ctx, provider.ID, ex.ID); err != nil {
 		t.Fatalf("acceptation: %v", err)
