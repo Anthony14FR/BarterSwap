@@ -94,7 +94,7 @@ Le solde de chaque utilisateur est calculé à partir d'un **journal de transact
 curl -s -X POST localhost:8080/api/users \
   -d '{"pseudo":"Tom","ville":"Paris"}'
 curl -s -X POST localhost:8080/api/users \
-  -d '{"pseudo":"Thami","ville":"Lyon"}'
+  -d '{"pseudo":"Thami","ville":"Marseille"}'
 
 # 2. Tom (id 1) déclare ses compétences puis publie un service
 curl -s -X PUT localhost:8080/api/users/1/skills -H 'X-UserID: 1' \

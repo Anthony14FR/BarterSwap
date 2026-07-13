@@ -233,20 +233,20 @@ func TestAPIUpdateUser(t *testing.T) {
 	u := api.createUser("Tom")
 
 	rec := api.do(http.MethodPut, fmt.Sprintf("/api/users/%d", u.ID), u.ID,
-		map[string]string{"pseudo": "Thami", "bio": "jardinière", "ville": "Lyon"})
+		map[string]string{"pseudo": "Thami", "bio": "marseillais fan de jul", "ville": "Marseille"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("modification: code %d, corps %s", rec.Code, rec.Body)
 	}
 	var updated User
 	decodeBody(t, rec, &updated)
-	if updated.Pseudo != "Thami" || updated.Bio != "jardinière" || updated.Ville != "Lyon" {
+	if updated.Pseudo != "Thami" || updated.Bio != "marseillais fan de jul" || updated.Ville != "Marseille" {
 		t.Errorf("utilisateur modifié = %+v", updated)
 	}
 
 	rec = api.do(http.MethodGet, fmt.Sprintf("/api/users/%d", u.ID), 0, nil)
 	var fetched User
 	decodeBody(t, rec, &fetched)
-	if fetched.Pseudo != "Thami" || fetched.Bio != "jardinière" || fetched.Ville != "Lyon" {
+	if fetched.Pseudo != "Thami" || fetched.Bio != "marseillais fan de jul" || fetched.Ville != "Marseille" {
 		t.Errorf("utilisateur relu = %+v", fetched)
 	}
 }
@@ -256,13 +256,13 @@ func TestAPIUpdateService(t *testing.T) {
 	provider, svc := api.seedService("Tom", "Jardinage", 3)
 
 	rec := api.do(http.MethodPut, fmt.Sprintf("/api/services/%d", svc.ID), provider.ID,
-		map[string]any{"titre": "Tonte pro", "categorie": "Jardinage", "duree_minutes": 90, "credits": 6, "ville": "Lyon"})
+		map[string]any{"titre": "Tonte pro", "categorie": "Jardinage", "duree_minutes": 90, "credits": 6, "ville": "Montcuq"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("modification service: code %d, corps %s", rec.Code, rec.Body)
 	}
 	var updated Service
 	decodeBody(t, rec, &updated)
-	if updated.Titre != "Tonte pro" || updated.Credits != 6 || updated.DureeMinutes != 90 || updated.Ville != "Lyon" {
+	if updated.Titre != "Tonte pro" || updated.Credits != 6 || updated.DureeMinutes != 90 || updated.Ville != "Montcuq" {
 		t.Errorf("service modifié = %+v", updated)
 	}
 }
@@ -295,7 +295,7 @@ func TestAPIListServicesVilleAndSearchFilters(t *testing.T) {
 		"titre": "Tonte de pelouse", "categorie": "Jardinage", "duree_minutes": 60, "credits": 3, "ville": "Paris",
 	})
 	api.do(http.MethodPost, "/api/services", provider.ID, map[string]any{
-		"titre": "Cours de cuisine", "categorie": "Cuisine", "duree_minutes": 90, "credits": 5, "ville": "Lyon",
+		"titre": "Cours de cuisine", "categorie": "Cuisine", "duree_minutes": 90, "credits": 5, "ville": "Montcuq",
 	})
 
 	rec := api.do(http.MethodGet, "/api/services?ville=paris", 0, nil)

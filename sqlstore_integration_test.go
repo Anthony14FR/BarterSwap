@@ -40,7 +40,7 @@ func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 	provider := api.createUser("Tom")
 
 	if rec := api.do(http.MethodPut, fmt.Sprintf("/api/users/%d", provider.ID), provider.ID,
-		map[string]string{"pseudo": "Thami", "bio": "jardinier", "ville": "Paris"}); rec.Code != http.StatusOK {
+		map[string]string{"pseudo": "Thami", "bio": "marseillais fan de jul", "ville": "Marseille"}); rec.Code != http.StatusOK {
 		t.Fatalf("modification profil: code %d, corps %s", rec.Code, rec.Body)
 	}
 
@@ -52,7 +52,7 @@ func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 	}
 
 	rec := api.do(http.MethodPost, "/api/services", provider.ID, map[string]any{
-		"titre": "Tonte", "categorie": "Jardinage", "duree_minutes": 60, "credits": 4, "ville": "Paris",
+		"titre": "Tonte", "categorie": "Jardinage", "duree_minutes": 60, "credits": 4, "ville": "Marseille",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("création service: code %d, corps %s", rec.Code, rec.Body)
@@ -61,12 +61,12 @@ func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 	decodeBody(t, rec, &svc)
 
 	if rec := api.do(http.MethodPut, fmt.Sprintf("/api/services/%d", svc.ID), provider.ID, map[string]any{
-		"titre": "Tonte pro", "categorie": "Jardinage", "duree_minutes": 90, "credits": 5, "ville": "Paris",
+		"titre": "Tonte pro", "categorie": "Jardinage", "duree_minutes": 90, "credits": 5, "ville": "Marseille",
 	}); rec.Code != http.StatusOK {
 		t.Fatalf("modification service: code %d, corps %s", rec.Code, rec.Body)
 	}
 
-	for _, q := range []string{"?categorie=Jardinage", "?ville=paris", "?search=tonte"} {
+	for _, q := range []string{"?categorie=Jardinage", "?ville=marseille", "?search=tonte"} {
 		rec := api.do(http.MethodGet, "/api/services"+q, 0, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("liste %s: code %d", q, rec.Code)
