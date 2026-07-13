@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"testing"
 )
 
 type memStore struct {
@@ -184,13 +186,19 @@ func (m *memStore) ListExchanges(_ context.Context, userID int, status string) (
 	return out, nil
 }
 
-func (m *memStore) TransitionExchange(_ context.Context, id int, from, to string, txns []CreditTransaction) (Exchange, error) {
+func (m *memStore) TransitionExchange(ctx context.Context, id int, from, to string, txns []CreditTransaction) (Exchange, error) {
 	e, ok := m.exchanges[id]
 	if !ok {
 		return Exchange{}, notFoundError("échange %d introuvable", id)
 	}
 	if e.Status != from {
 		return Exchange{}, conflictError("l'échange %d n'est pas dans l'état %q", id, from)
+	}
+	for _, uid := range debitedUserIDs(txns) {
+		balance, _ := m.Balance(ctx, uid)
+		if cost := debitTotal(txns, uid); balance < cost {
+			return Exchange{}, fmt.Errorf("solde %d, coût %d: %w", balance, cost, ErrInsufficientCredits)
+		}
 	}
 	e.Status = to
 	e.UpdatedAt = m.tick()
@@ -296,4 +304,28 @@ func (m *memStore) UserStats(ctx context.Context, id int) (UserStats, error) {
 	}
 	stats.CreditBalance, _ = m.Balance(ctx, id)
 	return stats, nil
+}
+
+func TestMemStoreTransitionExchangeInsufficientCredits(t *testing.T) {
+	m := newMemStore()
+	ctx := context.Background()
+	requester, _ := m.CreateUser(ctx, User{Pseudo: "requester"}, welcomeCredits)
+	owner, _ := m.CreateUser(ctx, User{Pseudo: "owner"}, welcomeCredits)
+
+	ex1, _ := m.CreateExchange(ctx, Exchange{ServiceID: 1, RequesterID: requester.ID, OwnerID: owner.ID})
+	ex2, _ := m.CreateExchange(ctx, Exchange{ServiceID: 2, RequesterID: requester.ID, OwnerID: owner.ID})
+
+	if _, err := m.TransitionExchange(ctx, ex1.ID, StatusPending, StatusAccepted,
+		[]CreditTransaction{{UserID: requester.ID, Montant: -6, Type: TxnSpend}}); err != nil {
+		t.Fatalf("premier accept: %v", err)
+	}
+
+	_, err := m.TransitionExchange(ctx, ex2.ID, StatusPending, StatusAccepted,
+		[]CreditTransaction{{UserID: requester.ID, Montant: -6, Type: TxnSpend}})
+	if !errors.Is(err, ErrInsufficientCredits) {
+		t.Fatalf("second accept: attendu ErrInsufficientCredits, obtenu %v", err)
+	}
+	if bal, _ := m.Balance(ctx, requester.ID); bal != welcomeCredits-6 {
+		t.Errorf("solde après échec = %d, attendu %d (pas de débit partiel)", bal, welcomeCredits-6)
+	}
 }

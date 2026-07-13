@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -174,5 +175,75 @@ func TestIntegrationExchangeConflict(t *testing.T) {
 	}
 	if rec := api.do(http.MethodPost, "/api/exchanges", r2.ID, map[string]int{"service_id": svc.ID}); rec.Code != http.StatusConflict {
 		t.Errorf("service déjà réservé: code %d, attendu 409", rec.Code)
+	}
+}
+
+func TestIntegrationConcurrentAcceptInsufficientCredits(t *testing.T) {
+	api := integrationAPI(t)
+	requester := api.createUser("requester") // solde = welcomeCredits (10)
+
+	const (
+		numServices = 5
+		serviceCost = 3
+		expectedOK  = welcomeCredits / serviceCost // 3
+	)
+
+	type pending struct {
+		ownerID    int
+		exchangeID int
+	}
+	pairs := make([]pending, numServices)
+	for i := 0; i < numServices; i++ {
+		provider, svc := api.seedService(fmt.Sprintf("provider%d", i), "Jardinage", serviceCost)
+		rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("création échange %d: code %d, corps %s", i, rec.Code, rec.Body)
+		}
+		var ex Exchange
+		decodeBody(t, rec, &ex)
+		pairs[i] = pending{ownerID: provider.ID, exchangeID: ex.ID}
+	}
+
+	var wg sync.WaitGroup
+	codes := make([]int, numServices)
+	for i, p := range pairs {
+		wg.Add(1)
+		go func(i int, p pending) {
+			defer wg.Done()
+			rec := api.do(http.MethodPut, fmt.Sprintf("/api/exchanges/%d/accept", p.exchangeID), p.ownerID, nil)
+			codes[i] = rec.Code
+		}(i, p)
+	}
+	wg.Wait()
+
+	okCount, badCount := 0, 0
+	for _, c := range codes {
+		switch c {
+		case http.StatusOK:
+			okCount++
+		case http.StatusBadRequest:
+			badCount++
+		default:
+			t.Errorf("code inattendu: %d", c)
+		}
+	}
+	if okCount != expectedOK {
+		t.Errorf("acceptations réussies = %d, attendu %d", okCount, expectedOK)
+	}
+	if badCount != numServices-expectedOK {
+		t.Errorf("acceptations refusées = %d, attendu %d", badCount, numServices-expectedOK)
+	}
+
+	rec := api.do(http.MethodGet, fmt.Sprintf("/api/users/%d/stats", requester.ID), 0, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats: code %d", rec.Code)
+	}
+	var stats UserStats
+	decodeBody(t, rec, &stats)
+	if stats.CreditBalance < 0 {
+		t.Fatalf("solde négatif détecté: %d", stats.CreditBalance)
+	}
+	if stats.CreditBalance != welcomeCredits-expectedOK*serviceCost {
+		t.Errorf("solde final = %d, attendu %d", stats.CreditBalance, welcomeCredits-expectedOK*serviceCost)
 	}
 }

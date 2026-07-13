@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"sort"
 	"time"
 )
 
@@ -70,6 +72,12 @@ func (s *SQLStore) TransitionExchange(ctx context.Context, id int, from, to stri
 	}
 	defer tx.Rollback()
 
+	for _, uid := range debitedUserIDs(txns) {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, uid); err != nil {
+			return Exchange{}, err
+		}
+	}
+
 	e, err := scanExchange(tx.QueryRowContext(ctx,
 		`UPDATE exchanges SET status = $1, updated_at = now()
 		 WHERE id = $2 AND status = $3
@@ -80,6 +88,18 @@ func (s *SQLStore) TransitionExchange(ctx context.Context, id int, from, to stri
 	}
 	if err != nil {
 		return Exchange{}, err
+	}
+
+	for _, uid := range debitedUserIDs(txns) {
+		var balance int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COALESCE(SUM(montant), 0) FROM credit_transactions WHERE user_id = $1`, uid,
+		).Scan(&balance); err != nil {
+			return Exchange{}, err
+		}
+		if cost := debitTotal(txns, uid); balance < cost {
+			return Exchange{}, fmt.Errorf("solde %d, coût %d: %w", balance, cost, ErrInsufficientCredits)
+		}
 	}
 
 	for _, t := range txns {
@@ -236,4 +256,27 @@ func scanExchange(row rowScanner) (Exchange, error) {
 	e.CreatedAt = ts(created)
 	e.UpdatedAt = ts(updated)
 	return e, nil
+}
+
+func debitedUserIDs(txns []CreditTransaction) []int {
+	seen := map[int]bool{}
+	var ids []int
+	for _, t := range txns {
+		if t.Montant < 0 && !seen[t.UserID] {
+			seen[t.UserID] = true
+			ids = append(ids, t.UserID)
+		}
+	}
+	sort.Ints(ids)
+	return ids
+}
+
+func debitTotal(txns []CreditTransaction, userID int) int {
+	cost := 0
+	for _, t := range txns {
+		if t.UserID == userID && t.Montant < 0 {
+			cost += -t.Montant
+		}
+	}
+	return cost
 }
