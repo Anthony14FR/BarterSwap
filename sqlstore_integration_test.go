@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -36,10 +37,10 @@ func integrationAPI(t *testing.T) *apiTest {
 func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 	api := integrationAPI(t)
 
-	provider := api.createUser("provider")
+	provider := api.createUser("Tom")
 
 	if rec := api.do(http.MethodPut, fmt.Sprintf("/api/users/%d", provider.ID), provider.ID,
-		map[string]string{"pseudo": "provider2", "bio": "jardinier", "ville": "Paris"}); rec.Code != http.StatusOK {
+		map[string]string{"pseudo": "Thami", "bio": "marseillais fan de jul", "ville": "Marseille"}); rec.Code != http.StatusOK {
 		t.Fatalf("modification profil: code %d, corps %s", rec.Code, rec.Body)
 	}
 
@@ -51,7 +52,7 @@ func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 	}
 
 	rec := api.do(http.MethodPost, "/api/services", provider.ID, map[string]any{
-		"titre": "Tonte", "categorie": "Jardinage", "duree_minutes": 60, "credits": 4, "ville": "Paris",
+		"titre": "Tonte", "categorie": "Jardinage", "duree_minutes": 60, "credits": 4, "ville": "Marseille",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("création service: code %d, corps %s", rec.Code, rec.Body)
@@ -60,12 +61,12 @@ func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 	decodeBody(t, rec, &svc)
 
 	if rec := api.do(http.MethodPut, fmt.Sprintf("/api/services/%d", svc.ID), provider.ID, map[string]any{
-		"titre": "Tonte pro", "categorie": "Jardinage", "duree_minutes": 90, "credits": 5, "ville": "Paris",
+		"titre": "Tonte pro", "categorie": "Jardinage", "duree_minutes": 90, "credits": 5, "ville": "Marseille",
 	}); rec.Code != http.StatusOK {
 		t.Fatalf("modification service: code %d, corps %s", rec.Code, rec.Body)
 	}
 
-	for _, q := range []string{"?categorie=Jardinage", "?ville=paris", "?search=tonte"} {
+	for _, q := range []string{"?categorie=Jardinage", "?ville=marseille", "?search=tonte"} {
 		rec := api.do(http.MethodGet, "/api/services"+q, 0, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("liste %s: code %d", q, rec.Code)
@@ -87,8 +88,8 @@ func TestIntegrationUserAndServiceLifecycle(t *testing.T) {
 
 func TestIntegrationExchangeHappyPath(t *testing.T) {
 	api := integrationAPI(t)
-	provider, svc := api.seedService("provider", "Jardinage", 4)
-	requester := api.createUser("requester")
+	provider, svc := api.seedService("Tom", "Jardinage", 4)
+	requester := api.createUser("Thami")
 
 	rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
 	if rec.Code != http.StatusCreated {
@@ -136,8 +137,8 @@ func TestIntegrationExchangeHappyPath(t *testing.T) {
 
 func TestIntegrationRejectAndCancelRefund(t *testing.T) {
 	api := integrationAPI(t)
-	provider, svc := api.seedService("provider", "Jardinage", 5)
-	requester := api.createUser("requester")
+	provider, svc := api.seedService("Tom", "Jardinage", 5)
+	requester := api.createUser("Thami")
 
 	// reject
 	rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
@@ -165,14 +166,84 @@ func TestIntegrationRejectAndCancelRefund(t *testing.T) {
 
 func TestIntegrationExchangeConflict(t *testing.T) {
 	api := integrationAPI(t)
-	_, svc := api.seedService("provider", "Jardinage", 3)
-	r1 := api.createUser("r1")
-	r2 := api.createUser("r2")
+	_, svc := api.seedService("Tom", "Jardinage", 3)
+	r1 := api.createUser("Thami")
+	r2 := api.createUser("Flo")
 
 	if rec := api.do(http.MethodPost, "/api/exchanges", r1.ID, map[string]int{"service_id": svc.ID}); rec.Code != http.StatusCreated {
 		t.Fatalf("premier échange: code %d", rec.Code)
 	}
 	if rec := api.do(http.MethodPost, "/api/exchanges", r2.ID, map[string]int{"service_id": svc.ID}); rec.Code != http.StatusConflict {
 		t.Errorf("service déjà réservé: code %d, attendu 409", rec.Code)
+	}
+}
+
+func TestIntegrationConcurrentAcceptInsufficientCredits(t *testing.T) {
+	api := integrationAPI(t)
+	requester := api.createUser("Thami") // solde = welcomeCredits (10)
+
+	const (
+		numServices = 5
+		serviceCost = 3
+		expectedOK  = welcomeCredits / serviceCost // 3
+	)
+
+	type pending struct {
+		ownerID    int
+		exchangeID int
+	}
+	pairs := make([]pending, numServices)
+	for i := 0; i < numServices; i++ {
+		provider, svc := api.seedService(fmt.Sprintf("Tom%d", i), "Jardinage", serviceCost)
+		rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("création échange %d: code %d, corps %s", i, rec.Code, rec.Body)
+		}
+		var ex Exchange
+		decodeBody(t, rec, &ex)
+		pairs[i] = pending{ownerID: provider.ID, exchangeID: ex.ID}
+	}
+
+	var wg sync.WaitGroup
+	codes := make([]int, numServices)
+	for i, p := range pairs {
+		wg.Add(1)
+		go func(i int, p pending) {
+			defer wg.Done()
+			rec := api.do(http.MethodPut, fmt.Sprintf("/api/exchanges/%d/accept", p.exchangeID), p.ownerID, nil)
+			codes[i] = rec.Code
+		}(i, p)
+	}
+	wg.Wait()
+
+	okCount, badCount := 0, 0
+	for _, c := range codes {
+		switch c {
+		case http.StatusOK:
+			okCount++
+		case http.StatusBadRequest:
+			badCount++
+		default:
+			t.Errorf("code inattendu: %d", c)
+		}
+	}
+	if okCount != expectedOK {
+		t.Errorf("acceptations réussies = %d, attendu %d", okCount, expectedOK)
+	}
+	if badCount != numServices-expectedOK {
+		t.Errorf("acceptations refusées = %d, attendu %d", badCount, numServices-expectedOK)
+	}
+
+	rec := api.do(http.MethodGet, fmt.Sprintf("/api/users/%d/stats", requester.ID), 0, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats: code %d", rec.Code)
+	}
+	var stats UserStats
+	decodeBody(t, rec, &stats)
+	if stats.CreditBalance < 0 {
+		t.Fatalf("solde négatif détecté: %d", stats.CreditBalance)
+	}
+	if stats.CreditBalance != welcomeCredits-expectedOK*serviceCost {
+		t.Errorf("solde final = %d, attendu %d", stats.CreditBalance, welcomeCredits-expectedOK*serviceCost)
 	}
 }

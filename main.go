@@ -1,3 +1,5 @@
+// Barterswap starts the BarterSwap HTTP API server. It opens the PostgreSQL
+// database, runs the schema migration, then listens with graceful shutdown.
 package main
 
 import (

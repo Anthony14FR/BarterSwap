@@ -11,10 +11,12 @@ import (
 	"github.com/lib/pq"
 )
 
+// SQLStore implements Store on top of database/sql, for PostgreSQL.
 type SQLStore struct {
 	db *sql.DB
 }
 
+// NewSQLStore builds a SQLStore around an already open connection pool.
 func NewSQLStore(db *sql.DB) *SQLStore { return &SQLStore{db: db} }
 
 func (s *SQLStore) Migrate(ctx context.Context) error {
@@ -36,7 +38,7 @@ func isUniqueViolation(err error) bool {
 func (s *SQLStore) CreateUser(ctx context.Context, u User, welcome int) (User, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("création utilisateur: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -46,18 +48,18 @@ func (s *SQLStore) CreateUser(ctx context.Context, u User, welcome int) (User, e
 		u.Pseudo, u.Bio, u.Ville,
 	).Scan(&u.ID, &created)
 	if err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("création utilisateur: %w", err)
 	}
 
 	if _, err = tx.ExecContext(ctx,
 		`INSERT INTO credit_transactions (user_id, exchange_id, montant, type) VALUES ($1, NULL, $2, $3)`,
 		u.ID, welcome, TxnEarn,
 	); err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("création utilisateur: %w", err)
 	}
 
 	if err = tx.Commit(); err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("création utilisateur: %w", err)
 	}
 
 	u.CreditBalance = welcome
@@ -76,15 +78,15 @@ func (s *SQLStore) GetUser(ctx context.Context, id int) (User, error) {
 		return User{}, notFoundError("utilisateur %d introuvable", id)
 	}
 	if err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("récupération utilisateur: %w", err)
 	}
 	u.CreatedAt = ts(created)
 
 	if u.Skills, err = s.GetSkills(ctx, id); err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("récupération utilisateur: %w", err)
 	}
 	if u.CreditBalance, err = s.Balance(ctx, id); err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("récupération utilisateur: %w", err)
 	}
 	return u, nil
 }
@@ -99,14 +101,14 @@ func (s *SQLStore) UpdateUser(ctx context.Context, u User) (User, error) {
 		return User{}, notFoundError("utilisateur %d introuvable", u.ID)
 	}
 	if err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("modification utilisateur: %w", err)
 	}
 	u.CreatedAt = ts(created)
 	if u.Skills, err = s.GetSkills(ctx, u.ID); err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("modification utilisateur: %w", err)
 	}
 	if u.CreditBalance, err = s.Balance(ctx, u.ID); err != nil {
-		return User{}, err
+		return User{}, fmt.Errorf("modification utilisateur: %w", err)
 	}
 	return u, nil
 }
@@ -114,13 +116,16 @@ func (s *SQLStore) UpdateUser(ctx context.Context, u User) (User, error) {
 func (s *SQLStore) UserExists(ctx context.Context, id int) (bool, error) {
 	var exists bool
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, id).Scan(&exists)
-	return exists, err
+	if err != nil {
+		return false, fmt.Errorf("vérification existence utilisateur: %w", err)
+	}
+	return exists, nil
 }
 
 func (s *SQLStore) GetSkills(ctx context.Context, userID int) ([]Skill, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT nom, niveau FROM skills WHERE user_id = $1 ORDER BY id`, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("récupération compétences: %w", err)
 	}
 	defer rows.Close()
 
@@ -128,32 +133,38 @@ func (s *SQLStore) GetSkills(ctx context.Context, userID int) ([]Skill, error) {
 	for rows.Next() {
 		var sk Skill
 		if err := rows.Scan(&sk.Nom, &sk.Niveau); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("récupération compétences: %w", err)
 		}
 		skills = append(skills, sk)
 	}
-	return skills, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("récupération compétences: %w", err)
+	}
+	return skills, nil
 }
 
 func (s *SQLStore) SetSkills(ctx context.Context, userID int, skills []Skill) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("modification compétences: %w", err)
 	}
 	defer tx.Rollback()
 
 	if _, err = tx.ExecContext(ctx, `DELETE FROM skills WHERE user_id = $1`, userID); err != nil {
-		return err
+		return fmt.Errorf("modification compétences: %w", err)
 	}
 	for _, sk := range skills {
 		if _, err = tx.ExecContext(ctx,
 			`INSERT INTO skills (user_id, nom, niveau) VALUES ($1, $2, $3)`,
 			userID, sk.Nom, sk.Niveau,
 		); err != nil {
-			return err
+			return fmt.Errorf("modification compétences: %w", err)
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("modification compétences: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLStore) CreateService(ctx context.Context, svc Service) (Service, error) {
@@ -165,7 +176,7 @@ func (s *SQLStore) CreateService(ctx context.Context, svc Service) (Service, err
 		svc.DureeMinutes, svc.Credits, svc.Ville, svc.Actif,
 	).Scan(&svc.ID, &created)
 	if err != nil {
-		return Service{}, err
+		return Service{}, fmt.Errorf("création service: %w", err)
 	}
 	svc.CreatedAt = ts(created)
 	return svc, nil
@@ -183,7 +194,7 @@ func (s *SQLStore) GetService(ctx context.Context, id int) (Service, error) {
 		return Service{}, notFoundError("service %d introuvable", id)
 	}
 	if err != nil {
-		return Service{}, err
+		return Service{}, fmt.Errorf("récupération service: %w", err)
 	}
 	svc.CreatedAt = ts(created)
 	return svc, nil
@@ -201,7 +212,7 @@ func (s *SQLStore) UpdateService(ctx context.Context, svc Service) (Service, err
 		return Service{}, notFoundError("service %d introuvable", svc.ID)
 	}
 	if err != nil {
-		return Service{}, err
+		return Service{}, fmt.Errorf("modification service: %w", err)
 	}
 	svc.CreatedAt = ts(created)
 	return svc, nil
@@ -210,11 +221,11 @@ func (s *SQLStore) UpdateService(ctx context.Context, svc Service) (Service, err
 func (s *SQLStore) DeleteService(ctx context.Context, id int) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM services WHERE id = $1`, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("suppression service: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("suppression service: %w", err)
 	}
 	if n == 0 {
 		return notFoundError("service %d introuvable", id)
@@ -251,7 +262,7 @@ func (s *SQLStore) ListServices(ctx context.Context, f ServiceFilter) ([]Service
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("liste services: %w", err)
 	}
 	defer rows.Close()
 
@@ -261,10 +272,13 @@ func (s *SQLStore) ListServices(ctx context.Context, f ServiceFilter) ([]Service
 		var created time.Time
 		if err := rows.Scan(&svc.ID, &svc.ProviderID, &svc.Titre, &svc.Description, &svc.Categorie,
 			&svc.DureeMinutes, &svc.Credits, &svc.Ville, &svc.Actif, &created); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("liste services: %w", err)
 		}
 		svc.CreatedAt = ts(created)
 		services = append(services, svc)
 	}
-	return services, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("liste services: %w", err)
+	}
+	return services, nil
 }

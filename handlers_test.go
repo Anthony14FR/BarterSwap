@@ -81,7 +81,7 @@ func TestAPICreateUser(t *testing.T) {
 		body any
 		code int
 	}{
-		{"succès", map[string]string{"pseudo": "alice"}, http.StatusCreated},
+		{"succès", map[string]string{"pseudo": "Tom"}, http.StatusCreated},
 		{"pseudo vide", map[string]string{"pseudo": ""}, http.StatusBadRequest},
 	}
 	for _, tc := range cases {
@@ -97,7 +97,7 @@ func TestAPICreateUser(t *testing.T) {
 
 func TestAPIGetUser(t *testing.T) {
 	api := newAPITest(t)
-	u := api.createUser("alice")
+	u := api.createUser("Tom")
 
 	if rec := api.do(http.MethodGet, fmt.Sprintf("/api/users/%d", u.ID), 0, nil); rec.Code != http.StatusOK {
 		t.Errorf("profil existant: code %d", rec.Code)
@@ -109,7 +109,7 @@ func TestAPIGetUser(t *testing.T) {
 
 func TestAPICreateServiceAuthAndSkill(t *testing.T) {
 	api := newAPITest(t)
-	provider := api.createUser("provider")
+	provider := api.createUser("Tom")
 	body := map[string]any{"titre": "Tonte", "categorie": "Jardinage", "duree_minutes": 60, "credits": 3}
 
 	if rec := api.do(http.MethodPost, "/api/services", 0, body); rec.Code != http.StatusUnauthorized {
@@ -126,8 +126,8 @@ func TestAPICreateServiceAuthAndSkill(t *testing.T) {
 
 func TestAPIExchangeHappyPath(t *testing.T) {
 	api := newAPITest(t)
-	provider, svc := api.seedService("provider", "Jardinage", 4)
-	requester := api.createUser("requester")
+	provider, svc := api.seedService("Tom", "Jardinage", 4)
+	requester := api.createUser("Thami")
 
 	if rec := api.do(http.MethodPost, "/api/exchanges", provider.ID, map[string]int{"service_id": svc.ID}); rec.Code != http.StatusBadRequest {
 		t.Errorf("échange sur son propre service: code %d, attendu 400", rec.Code)
@@ -163,9 +163,9 @@ func TestAPIExchangeHappyPath(t *testing.T) {
 
 func TestAPIExchangeConflict(t *testing.T) {
 	api := newAPITest(t)
-	_, svc := api.seedService("provider", "Jardinage", 3)
-	r1 := api.createUser("r1")
-	r2 := api.createUser("r2")
+	_, svc := api.seedService("Tom", "Jardinage", 3)
+	r1 := api.createUser("Thami")
+	r2 := api.createUser("Flo")
 
 	if rec := api.do(http.MethodPost, "/api/exchanges", r1.ID, map[string]int{"service_id": svc.ID}); rec.Code != http.StatusCreated {
 		t.Fatalf("premier échange: code %d", rec.Code)
@@ -177,8 +177,8 @@ func TestAPIExchangeConflict(t *testing.T) {
 
 func TestAPIListServicesFilter(t *testing.T) {
 	api := newAPITest(t)
-	api.seedService("jardinier", "Jardinage", 3)
-	api.seedService("dev", "Informatique", 5)
+	api.seedService("Tom", "Jardinage", 3)
+	api.seedService("Thami", "Informatique", 5)
 
 	rec := api.do(http.MethodGet, "/api/services?categorie=Informatique", 0, nil)
 	if rec.Code != http.StatusOK {
@@ -188,5 +188,133 @@ func TestAPIListServicesFilter(t *testing.T) {
 	decodeBody(t, rec, &services)
 	if len(services) != 1 || services[0].Categorie != "Informatique" {
 		t.Errorf("filtre catégorie: %d résultat(s), attendu 1 en Informatique", len(services))
+	}
+}
+
+func TestAPIUpdateServiceForbiddenForNonOwner(t *testing.T) {
+	api := newAPITest(t)
+	_, svc := api.seedService("Tom", "Jardinage", 3)
+	other := api.createUser("Thami")
+	rec := api.do(http.MethodPut, fmt.Sprintf("/api/services/%d", svc.ID), other.ID,
+		map[string]any{"titre": "hack", "categorie": "Jardinage", "duree_minutes": 10, "credits": 1})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("code = %d, attendu 403", rec.Code)
+	}
+}
+
+func TestAPIDeleteServiceForbiddenForNonOwner(t *testing.T) {
+	api := newAPITest(t)
+	_, svc := api.seedService("Tom", "Jardinage", 3)
+	other := api.createUser("Thami")
+	rec := api.do(http.MethodDelete, fmt.Sprintf("/api/services/%d", svc.ID), other.ID, nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("code = %d, attendu 403", rec.Code)
+	}
+}
+
+func TestAPIGetExchangeForbiddenForNonParticipant(t *testing.T) {
+	api := newAPITest(t)
+	_, svc := api.seedService("Tom", "Jardinage", 3)
+	requester := api.createUser("Thami")
+	outsider := api.createUser("Flo")
+
+	rec := api.do(http.MethodPost, "/api/exchanges", requester.ID, map[string]int{"service_id": svc.ID})
+	var ex Exchange
+	decodeBody(t, rec, &ex)
+
+	rec = api.do(http.MethodGet, fmt.Sprintf("/api/exchanges/%d", ex.ID), outsider.ID, nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("code = %d, attendu 403", rec.Code)
+	}
+}
+
+func TestAPIUpdateUser(t *testing.T) {
+	api := newAPITest(t)
+	u := api.createUser("Tom")
+
+	rec := api.do(http.MethodPut, fmt.Sprintf("/api/users/%d", u.ID), u.ID,
+		map[string]string{"pseudo": "Thami", "bio": "marseillais fan de jul", "ville": "Marseille"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("modification: code %d, corps %s", rec.Code, rec.Body)
+	}
+	var updated User
+	decodeBody(t, rec, &updated)
+	if updated.Pseudo != "Thami" || updated.Bio != "marseillais fan de jul" || updated.Ville != "Marseille" {
+		t.Errorf("utilisateur modifié = %+v", updated)
+	}
+
+	rec = api.do(http.MethodGet, fmt.Sprintf("/api/users/%d", u.ID), 0, nil)
+	var fetched User
+	decodeBody(t, rec, &fetched)
+	if fetched.Pseudo != "Thami" || fetched.Bio != "marseillais fan de jul" || fetched.Ville != "Marseille" {
+		t.Errorf("utilisateur relu = %+v", fetched)
+	}
+}
+
+func TestAPIUpdateService(t *testing.T) {
+	api := newAPITest(t)
+	provider, svc := api.seedService("Tom", "Jardinage", 3)
+
+	rec := api.do(http.MethodPut, fmt.Sprintf("/api/services/%d", svc.ID), provider.ID,
+		map[string]any{"titre": "Tonte pro", "categorie": "Jardinage", "duree_minutes": 90, "credits": 6, "ville": "Montcuq"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("modification service: code %d, corps %s", rec.Code, rec.Body)
+	}
+	var updated Service
+	decodeBody(t, rec, &updated)
+	if updated.Titre != "Tonte pro" || updated.Credits != 6 || updated.DureeMinutes != 90 || updated.Ville != "Montcuq" {
+		t.Errorf("service modifié = %+v", updated)
+	}
+}
+
+func TestAPIGetUserSkills(t *testing.T) {
+	api := newAPITest(t)
+	u := api.createUser("Tom")
+	skills := []Skill{{Nom: "Jardinage", Niveau: "expert"}, {Nom: "Cuisine", Niveau: "débutant"}}
+	if rec := api.do(http.MethodPut, fmt.Sprintf("/api/users/%d/skills", u.ID), u.ID, skills); rec.Code != http.StatusOK {
+		t.Fatalf("écriture compétences: code %d", rec.Code)
+	}
+	rec := api.do(http.MethodGet, fmt.Sprintf("/api/users/%d/skills", u.ID), 0, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lecture compétences: code %d", rec.Code)
+	}
+	var got []Skill
+	decodeBody(t, rec, &got)
+	if len(got) != 2 {
+		t.Fatalf("compétences = %v, attendu 2", got)
+	}
+}
+
+func TestAPIListServicesVilleAndSearchFilters(t *testing.T) {
+	api := newAPITest(t)
+	provider := api.createUser("Tom")
+	api.do(http.MethodPut, fmt.Sprintf("/api/users/%d/skills", provider.ID), provider.ID,
+		[]Skill{{Nom: "Jardinage", Niveau: "expert"}, {Nom: "Cuisine", Niveau: "expert"}})
+
+	api.do(http.MethodPost, "/api/services", provider.ID, map[string]any{
+		"titre": "Tonte de pelouse", "categorie": "Jardinage", "duree_minutes": 60, "credits": 3, "ville": "Paris",
+	})
+	api.do(http.MethodPost, "/api/services", provider.ID, map[string]any{
+		"titre": "Cours de cuisine", "categorie": "Cuisine", "duree_minutes": 90, "credits": 5, "ville": "Montcuq",
+	})
+
+	rec := api.do(http.MethodGet, "/api/services?ville=paris", 0, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("filtre ville: code %d", rec.Code)
+	}
+	var byVille []Service
+	decodeBody(t, rec, &byVille)
+	if len(byVille) != 1 || byVille[0].Ville != "Paris" {
+		t.Errorf("filtre ville: %d résultat(s), attendu 1", len(byVille))
+	}
+
+	rec = api.do(http.MethodGet, "/api/services?search=cuisine", 0, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("filtre recherche: code %d", rec.Code)
+	}
+	var bySearch []Service
+	decodeBody(t, rec, &bySearch)
+	if len(bySearch) != 1 || bySearch[0].Titre != "Cours de cuisine" {
+		t.Errorf("filtre recherche: %d résultat(s), attendu 1", len(bySearch))
 	}
 }
