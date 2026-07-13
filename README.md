@@ -64,6 +64,12 @@ besoin ; les routes de création/modification l'exigent (sinon `401`).
 | `PUT`    | `/api/exchanges/{id}/cancel`       |  ✓   | Annuler — restitue les crédits bloqués          |
 | `POST`   | `/api/exchanges/{id}/review`       |  ✓   | Noter un échange terminé                        |
 
+### Compétences et catégories
+
+Un service ne peut être publié que dans une catégorie pour laquelle le fournisseur a
+déclaré une compétence : `Service.Categorie` doit correspondre (insensible à la casse) au
+`Skill.Nom` d'une des compétences du profil (`PUT /api/users/{id}/skills`). Sinon, `400`.
+
 ### Cycle de vie d'un échange
 
 ```

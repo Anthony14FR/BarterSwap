@@ -5,10 +5,13 @@ import (
 	"net/http"
 )
 
+// Server exposes the BarterSwap REST API on top of an App.
 type Server struct {
 	app *App
 }
 
+// NewServer builds the full http.Handler for the API: routes, then the
+// middleware chain (recovery, logging, CORS, auth, timeout).
 func NewServer(app *App) http.Handler {
 	s := &Server{app: app}
 	mux := http.NewServeMux()

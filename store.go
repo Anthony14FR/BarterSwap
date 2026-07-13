@@ -2,12 +2,16 @@ package main
 
 import "context"
 
+// ServiceFilter holds the optional filters accepted by Store.ListServices.
 type ServiceFilter struct {
 	Categorie string
 	Ville     string
 	Search    string
 }
 
+// Store gives access to all stored data, independent of the storage engine.
+// SQLStore satisfies it with PostgreSQL in production; memStore satisfies it
+// in tests.
 type Store interface {
 	CreateUser(ctx context.Context, u User, welcome int) (User, error)
 	GetUser(ctx context.Context, id int) (User, error)

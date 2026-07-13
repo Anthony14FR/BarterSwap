@@ -11,10 +11,12 @@ import (
 	"github.com/lib/pq"
 )
 
+// SQLStore implements Store on top of database/sql, for PostgreSQL.
 type SQLStore struct {
 	db *sql.DB
 }
 
+// NewSQLStore builds a SQLStore around an already open connection pool.
 func NewSQLStore(db *sql.DB) *SQLStore { return &SQLStore{db: db} }
 
 func (s *SQLStore) Migrate(ctx context.Context) error {

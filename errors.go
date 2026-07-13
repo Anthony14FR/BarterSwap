@@ -6,6 +6,8 @@ import (
 	"net/http"
 )
 
+// Sentinel errors used across the app to classify failures. statusFor maps
+// each one to an HTTP status code.
 var (
 	ErrNotFound            = errors.New("ressource introuvable")
 	ErrValidation          = errors.New("requête invalide")
@@ -15,6 +17,8 @@ var (
 	ErrInsufficientCredits = errors.New("crédits insuffisants")
 )
 
+// Error is a business error. It carries a human-readable message plus a
+// sentinel error (kind) that errors.Is can match against.
 type Error struct {
 	kind error
 	msg  string

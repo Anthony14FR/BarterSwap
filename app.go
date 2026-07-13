@@ -6,10 +6,13 @@ import (
 	"strings"
 )
 
+// App holds the business logic of BarterSwap. It knows nothing about HTTP or
+// database/sql: it only talks to the Store interface.
 type App struct {
 	store Store
 }
 
+// NewApp builds an App backed by the given Store.
 func NewApp(store Store) *App { return &App{store: store} }
 
 func isParticipant(e Exchange, userID int) bool {
