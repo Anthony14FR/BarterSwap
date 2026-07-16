@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -9,6 +10,23 @@ import (
 
 type errorBody struct {
 	Error string `json:"error"`
+}
+
+func statusFor(err error) int {
+	switch {
+	case errors.Is(err, ErrValidation), errors.Is(err, ErrInsufficientCredits):
+		return http.StatusBadRequest
+	case errors.Is(err, ErrUnauthorized):
+		return http.StatusUnauthorized
+	case errors.Is(err, ErrForbidden):
+		return http.StatusForbidden
+	case errors.Is(err, ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, ErrConflict):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

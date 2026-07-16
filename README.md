@@ -118,28 +118,101 @@ curl -s localhost:8080/api/users/1/stats
 
 ## Tests
 
+La suite a deux modes. **Le mode complet est celui qui compte** : sans base, les tests
+d'intégration se skippent et la couverture tombe sous le seuil.
+
 ```bash
-go test -v -cover ./...
+# 1. Une base de test jetable
+docker run --rm -d --name barterswap-test-db \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=barterswap_test \
+  -p 55432:5432 postgres:17-alpine
+
+# 2. La suite complète
+export TEST_DATABASE_URL="postgres://postgres:postgres@localhost:55432/barterswap_test?sslmode=disable"
+go test -v -cover ./...      # → coverage: 71.5% of statements
 ```
 
-Les tests utilisent une implémentation **en mémoire** de l'interface `Store`
-(`mem_store_test.go`), ce qui permet d'exécuter la logique métier et l'API (`httptest`)
-sans base de données. Ils sont *table-driven* et couvrent les principaux cas métier
-(crédits de bienvenue, crédits insuffisants, conflit de réservation, cycle de vie
-complet, règles d'évaluation).
+```bash
+# Mode rapide, sans base : les tests d'intégration se skippent
+go test -v -cover ./...      # → coverage: 43.2% of statements
+```
+
+| Mode                        | Couverture | Ce qui est exercé                                    |
+| --------------------------- | ---------- | ---------------------------------------------------- |
+| `TEST_DATABASE_URL` défini  | **71,5 %** | Tout, `sqlstore*.go` compris                          |
+| Sans base                   | 43,2 %     | Métier + API seulement ; `sqlstore*.go` non couvert   |
+
+L'écart s'explique en une ligne : `sqlstore.go` et `sqlstore_exchange.go` pèsent ~43 %
+des instructions et ne peuvent être exercés que contre un vrai PostgreSQL (transactions,
+index unique partiel, codes d'erreur `pq`). Les mocker n'aurait rien prouvé.
+
+Les tests unitaires utilisent une implémentation **en mémoire** de `Store`
+(`store_mem_test.go`) : la logique métier et l'API (`httptest`) tournent sans base. Ils
+sont *table-driven* et couvrent les cas métier du sujet — crédits de bienvenue, crédits
+insuffisants, conflit de réservation, cycle de vie complet (accept / complete / reject /
+cancel), règles d'évaluation, cohérence des stats.
 
 ## Architecture
 
-Un seul package Go, mais trois responsabilités clairement séparées :
+Le sujet impose **un seul package Go, sans sous-packages**. En Go un dossier *est* un
+package : « un seul package » implique donc mécaniquement des fichiers à plat. Les
+couches sont rendues visibles par un **préfixe de nom** — l'ordre alphabétique devient
+l'ordre des couches. C'est l'idiome de `crypto/tls` (`handshake_client.go`,
+`handshake_server.go`…).
 
-| Couche       | Fichiers                                        | Rôle                                                        |
-| ------------ | ----------------------------------------------- | ----------------------------------------------------------- |
-| **HTTP**     | `handlers.go`, `response.go`, `middleware.go`   | Décodage/encodage JSON, routage, middlewares. *Aucune règle métier.* |
-| **Métier**   | `app.go`, `models.go`, `errors.go`              | Validations, crédits, cycle de vie des échanges.            |
-| **Stockage** | `store.go`, `sqlstore*.go`, `schema.go`         | Accès `database/sql` derrière l'interface `Store`.          |
+```
+main.go                        point d'entrée : pool, migration, serveur, arrêt gracieux
+
+biz_app.go                     métier — App, règles de gestion, cycle de vie
+biz_errors.go                  métier — sentinelles, type Error
+biz_models.go                  métier — types du domaine
+
+http_middleware.go             exposition — recovery, logging, CORS, auth, timeout
+http_response.go               exposition — encodage/décodage JSON, statusFor
+http_server.go                 exposition — routes et handlers
+
+store.go                       contrat — les 4 interfaces composées en Store
+store_postgres.go              stockage — users, skills, services
+store_postgres_exchange.go     stockage — échanges, crédits, avis
+store_schema.go                stockage — DDL
+```
+
+| Couche       | Fichiers        | Rôle                                                                 |
+| ------------ | --------------- | -------------------------------------------------------------------- |
+| **Métier**   | `biz_*.go`      | Validations, crédits, cycle de vie. *Ne connaît ni HTTP ni SQL.*      |
+| **HTTP**     | `http_*.go`     | Décodage/encodage JSON, routage, middlewares. *Aucune règle métier.*  |
+| **Stockage** | `store*.go`     | Accès `database/sql` derrière l'interface `Store`.                    |
+
+La séparation n'est pas qu'une affirmation : elle se vérifie en deux commandes.
+
+```bash
+# La couche métier n'importe ni HTTP ni SQL → aucun résultat
+grep -lE '^\s+"(net/http|database/sql)"' biz_*.go
+
+# Les autres couches, elles, les importent bien → la commande discrimine
+grep -lE '^\s+"(net/http|database/sql)"' http_*.go store_*.go
+```
+
+Les fichiers `biz_*` n'utilisent que `context`, `fmt`, `strings` et `errors`. La
+traduction des erreurs métier en codes HTTP est isolée dans `statusFor`
+(`http_response.go`) : `biz_errors.go` produit des sentinelles sans jamais savoir
+qu'elles deviendront un `400` ou un `409`.
 
 La couche métier (`App`) dépend de l'interface `Store`, définie **côté consommateur**.
 En production elle est satisfaite par `SQLStore` (PostgreSQL) ; en test par `memStore`.
+Aucune des deux ne nomme jamais `Store` : la satisfaction est implicite.
+
+`Store` n'est pas une interface monolithique : c'est la **composition** de quatre
+interfaces plus petites, une par domaine métier.
+
+```go
+type Store interface {
+    UserStore      // comptes, compétences, statistiques
+    ServiceStore   // annonces
+    ExchangeStore  // échanges + journal de crédits
+    ReviewStore    // avis
+}
+```
 
 Points notables :
 
