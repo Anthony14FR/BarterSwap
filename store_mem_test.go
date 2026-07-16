@@ -35,8 +35,6 @@ func (m *memStore) tick() string {
 	return fmt.Sprintf("2026-01-01T00:%02d:%02dZ", m.clock/60, m.clock%60)
 }
 
-func (m *memStore) Close() error { return nil }
-
 func (m *memStore) CreateUser(_ context.Context, u User, welcome int) (User, error) {
 	m.seqUser++
 	u.ID = m.seqUser

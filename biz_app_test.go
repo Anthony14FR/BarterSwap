@@ -202,6 +202,97 @@ func TestReviewRules(t *testing.T) {
 	}
 }
 
+func TestRejectExchange(t *testing.T) {
+	a, store := newTestApp()
+	ctx := context.Background()
+	provider, service := seedProviderService(t, a, 4)
+	requester := mustUser(t, a, "Thami")
+
+	ex, err := a.CreateExchange(ctx, requester.ID, service.ID)
+	if err != nil {
+		t.Fatalf("création échange: %v", err)
+	}
+
+	if _, err := a.RejectExchange(ctx, requester.ID, ex.ID); !errors.Is(err, ErrForbidden) {
+		t.Errorf("refus par le demandeur: attendu ErrForbidden, obtenu %v", err)
+	}
+
+	rejected, err := a.RejectExchange(ctx, provider.ID, ex.ID)
+	if err != nil {
+		t.Fatalf("refus par l'offreur: %v", err)
+	}
+	if rejected.Status != StatusRejected {
+		t.Errorf("statut = %q, attendu %q", rejected.Status, StatusRejected)
+	}
+
+	// A reject starts from pending: no credits were held, so no balance moves.
+	if bal, _ := store.Balance(ctx, requester.ID); bal != welcomeCredits {
+		t.Errorf("solde demandeur = %d, attendu %d (inchangé)", bal, welcomeCredits)
+	}
+	if bal, _ := store.Balance(ctx, provider.ID); bal != welcomeCredits {
+		t.Errorf("solde offreur = %d, attendu %d (inchangé)", bal, welcomeCredits)
+	}
+
+	if _, err := a.RejectExchange(ctx, provider.ID, ex.ID); !errors.Is(err, ErrConflict) {
+		t.Errorf("second refus: attendu ErrConflict, obtenu %v", err)
+	}
+}
+
+func TestListExchangesFilterStatus(t *testing.T) {
+	a, _ := newTestApp()
+	ctx := context.Background()
+	provider, service := seedProviderService(t, a, 4)
+	requester := mustUser(t, a, "Thami")
+	ex, err := a.CreateExchange(ctx, requester.ID, service.ID)
+	if err != nil {
+		t.Fatalf("création échange: %v", err)
+	}
+	if _, err := a.AcceptExchange(ctx, provider.ID, ex.ID); err != nil {
+		t.Fatalf("acceptation: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		status  string
+		want    int
+		wantErr error
+	}{
+		{"sans filtre", "", 1, nil},
+		{"statut correspondant", StatusAccepted, 1, nil},
+		{"statut sans correspondance", StatusPending, 0, nil},
+		{"statut invalide", "n_importe_quoi", 0, ErrValidation},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := a.ListExchanges(ctx, requester.ID, tc.status)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("attendu %v, obtenu %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("erreur inattendue: %v", err)
+			}
+			if len(got) != tc.want {
+				t.Errorf("%d échange(s), attendu %d", len(got), tc.want)
+			}
+		})
+	}
+}
+
+func TestReviewsOnMissingTarget(t *testing.T) {
+	a, _ := newTestApp()
+	ctx := context.Background()
+
+	if _, err := a.UserReviews(ctx, 999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("avis d'un utilisateur inexistant: attendu ErrNotFound, obtenu %v", err)
+	}
+	if _, err := a.ServiceReviews(ctx, 999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("avis d'un service inexistant: attendu ErrNotFound, obtenu %v", err)
+	}
+}
+
 func TestUserStats(t *testing.T) {
 	a, _ := newTestApp()
 	ctx := context.Background()
