@@ -17,7 +17,8 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-      - go_modules:/root/go/pkg/mod
+      - go_modules:/go/pkg/mod
+      - go_build:/root/.cache/go-build
     ports:
       - "${APP_PORT:-8080}:8080"
     env_file: .env
@@ -31,3 +32,4 @@ services:
 volumes:
   postgres_data:
   go_modules:
+  go_build:
