@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,6 +25,9 @@ func main() {
 }
 
 func run() error {
+	seedDemo := flag.Bool("seed", false, "insère un jeu de données de démonstration puis s'arrête")
+	flag.Parse()
+
 	dsn := envOr("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/barterswap?sslmode=disable")
 	addr := ":" + envOr("PORT", "8080")
 
@@ -49,6 +53,10 @@ func run() error {
 	store := NewSQLStore(db)
 	if err := store.Migrate(ctx); err != nil {
 		return err
+	}
+
+	if *seedDemo {
+		return seed(ctx, NewApp(store))
 	}
 
 	server := &http.Server{
