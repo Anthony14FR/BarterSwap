@@ -1,5 +1,7 @@
 # BarterSwap — API d'échange de compétences
 
+[![CI](https://github.com/Anthony14FR/BarterSwap/actions/workflows/ci.yml/badge.svg)](https://github.com/Anthony14FR/BarterSwap/actions/workflows/ci.yml)
+
 Banque de temps entre particuliers : chaque heure de service rendue donne droit à une
 heure de service reçue. La monnaie d'échange est le **crédit-temps**, jamais l'argent.
 
