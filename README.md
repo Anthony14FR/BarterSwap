@@ -34,6 +34,17 @@ docker run --name barterswap-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=bar
 go run .
 ```
 
+### Démarrage rapide (docker compose)
+
+```bash
+cp .env.example .env                          # obligatoire : le compose lit .env (gitignoré)
+docker compose up -d                          # PostgreSQL + API sur :8080, doc sur /docs
+docker compose run --rm app go run . -seed    # optionnel : jeu de démonstration (base vide uniquement)
+```
+
+Si le seed refuse (base non vide), repartez de zéro avec `docker compose down -v`
+puis relancez les deux dernières commandes.
+
 ## Authentification
 
 Aucune authentification avancée : le client s'identifie via le header **`X-UserID`**
