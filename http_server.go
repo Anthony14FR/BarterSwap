@@ -17,6 +17,7 @@ func NewServer(app *App) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", s.health)
+	registerDocs(mux)
 
 	mux.HandleFunc("POST /api/users", s.createUser)
 	mux.HandleFunc("GET /api/users/{id}", s.getUser)

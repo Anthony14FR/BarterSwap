@@ -34,11 +34,35 @@ docker run --name barterswap-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=bar
 go run .
 ```
 
+### Démarrage rapide (docker compose)
+
+```bash
+cp .env.example .env                          # obligatoire : le compose lit .env (gitignoré)
+docker compose up -d                          # PostgreSQL + API sur :8080, doc sur /docs
+docker compose run --rm app go run . -seed    # optionnel : jeu de démonstration (base vide uniquement)
+```
+
+Si le seed refuse (base non vide), repartez de zéro avec `docker compose down -v`
+puis relancez les deux dernières commandes.
+
 ## Authentification
 
 Aucune authentification avancée : le client s'identifie via le header **`X-UserID`**
 (l'identifiant numérique de l'utilisateur). Les routes de lecture publiques n'en ont pas
 besoin ; les routes de création/modification l'exigent (sinon `401`).
+
+## Documentation interactive
+
+Le serveur expose sa propre documentation sur
+[http://localhost:8080/docs](http://localhost:8080/docs) : la spécification
+OpenAPI 3 (`docs/openapi.yaml`, écrite à la main) rendue par Swagger UI. Les
+fichiers statiques sont versionnés dans le dépôt et embarqués dans le binaire
+via `go:embed` — aucune dépendance Go supplémentaire, aucun CDN, la page
+fonctionne hors ligne.
+
+Le bouton **Authorize** renseigne le header `X-UserID` ; **Try it out**
+exécute de vraies requêtes contre le serveur. Un test (`http_docs_test.go`)
+vérifie que chaque route du serveur est documentée dans la spécification.
 
 ## Endpoints
 

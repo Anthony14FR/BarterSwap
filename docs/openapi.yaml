@@ -1,0 +1,887 @@
+openapi: 3.0.3
+info:
+  title: BarterSwap
+  description: |
+    API d'échange de compétences entre particuliers, sans transaction
+    monétaire. Le système fonctionne avec un **crédit-temps** : chaque heure
+    de service rendue donne droit à une heure de service reçue.
+
+    Les routes d'écriture s'authentifient via le header `X-UserID`
+    (bouton **Authorize** ci-dessous). Le solde de chaque utilisateur est
+    calculé à partir d'un journal de transactions, jamais d'un simple compteur.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: users
+    description: Comptes, compétences et statistiques
+  - name: services
+    description: Annonces de services
+  - name: exchanges
+    description: Demandes d'échange et cycle de vie des crédits
+  - name: reviews
+    description: Avis sur les échanges terminés
+  - name: health
+    description: Supervision
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: État du serveur
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Serveur opérationnel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/users:
+    post:
+      tags: [users]
+      summary: Créer un compte
+      operationId: createUser
+      security: []
+      description: 10 crédits de bienvenue sont attribués automatiquement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRequest"
+      responses:
+        "201":
+          description: Compte créé
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/users/{id}:
+    get:
+      tags: [users]
+      summary: Profil public d'un utilisateur
+      operationId: getUser
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Profil de l'utilisateur
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [users]
+      summary: Modifier son profil
+      operationId: updateUser
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRequest"
+      responses:
+        "200":
+          description: Profil mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/users/{id}/skills:
+    get:
+      tags: [users]
+      summary: Compétences d'un utilisateur
+      operationId: getUserSkills
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Liste des compétences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Skill"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [users]
+      summary: Définir ses compétences
+      operationId: setUserSkills
+      description: La liste envoyée remplace intégralement l'existante.
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/Skill"
+      responses:
+        "200":
+          description: Compétences enregistrées
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Skill"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/users/{id}/reviews:
+    get:
+      tags: [reviews]
+      summary: Avis reçus par un utilisateur
+      operationId: getUserReviews
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Avis reçus, du plus récent au plus ancien
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Review"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/users/{id}/stats:
+    get:
+      tags: [users]
+      summary: Statistiques d'un utilisateur
+      operationId: getUserStats
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Statistiques calculées depuis le journal de crédits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStats"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/services:
+    get:
+      tags: [services]
+      summary: Lister les services
+      operationId: listServices
+      security: []
+      description: Le filtrage est effectué côté serveur.
+      parameters:
+        - name: categorie
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Categorie"
+        - name: ville
+          in: query
+          required: false
+          schema:
+            type: string
+            example: Lyon
+        - name: search
+          in: query
+          required: false
+          description: Recherche textuelle dans le titre et la description
+          schema:
+            type: string
+            example: guitare
+      responses:
+        "200":
+          description: Services correspondant aux filtres
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+    post:
+      tags: [services]
+      summary: Publier une annonce
+      operationId: createService
+      description: >
+        La catégorie doit correspondre à une compétence déclarée du
+        fournisseur, sinon 400.
+      security:
+        - XUserID: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceRequest"
+      responses:
+        "201":
+          description: Annonce créée
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/services/{id}:
+    get:
+      tags: [services]
+      summary: Détail d'un service
+      operationId: getService
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Le service demandé
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [services]
+      summary: Modifier son annonce
+      operationId: updateService
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceRequest"
+      responses:
+        "200":
+          description: Annonce mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [services]
+      summary: Supprimer son annonce
+      operationId: deleteService
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Annonce supprimée
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/services/{id}/reviews:
+    get:
+      tags: [reviews]
+      summary: Avis sur un service
+      operationId: getServiceReviews
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Avis laissés sur les échanges de ce service
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Review"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/exchanges:
+    get:
+      tags: [exchanges]
+      summary: Mes échanges (demandés et reçus)
+      operationId: listExchanges
+      security:
+        - XUserID: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Status"
+      responses:
+        "200":
+          description: Échanges où l'utilisateur est demandeur ou offreur
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Exchange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [exchanges]
+      summary: Créer une demande d'échange
+      operationId: createExchange
+      description: >
+        Refusé si le service appartient au demandeur, si son solde est
+        insuffisant (400) ou si le service a déjà un échange en cours (409).
+      security:
+        - XUserID: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeRequest"
+      responses:
+        "201":
+          description: Demande créée en statut `pending`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exchange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/exchanges/{id}:
+    get:
+      tags: [exchanges]
+      summary: Détail d'un échange
+      operationId: getExchange
+      description: Réservé aux deux participants.
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: L'échange demandé
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/exchanges/{id}/accept:
+    put:
+      tags: [exchanges]
+      summary: Accepter une demande (offreur)
+      operationId: acceptExchange
+      description: >
+        Passe l'échange de `pending` à `accepted` et bloque les crédits du
+        demandeur : ils sont débités de son solde mais pas encore crédités à
+        l'offreur.
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Échange accepté, crédits bloqués
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exchange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/exchanges/{id}/reject:
+    put:
+      tags: [exchanges]
+      summary: Refuser une demande (offreur)
+      operationId: rejectExchange
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Échange refusé
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/exchanges/{id}/complete:
+    put:
+      tags: [exchanges]
+      summary: Marquer comme terminé
+      operationId: completeExchange
+      description: >
+        Passe l'échange de `accepted` à `completed` et transfère
+        définitivement les crédits bloqués à l'offreur.
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Échange terminé, crédits transférés
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/exchanges/{id}/cancel:
+    put:
+      tags: [exchanges]
+      summary: Annuler (demandeur ou offreur)
+      operationId: cancelExchange
+      description: >
+        Possible en `pending` ou `accepted`. Les crédits bloqués sont
+        restitués au demandeur.
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Échange annulé, crédits restitués
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exchange"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/exchanges/{id}/review:
+    post:
+      tags: [reviews]
+      summary: Noter un échange terminé
+      operationId: createReview
+      description: >
+        Réservé aux participants, uniquement sur un échange `completed`, un
+        seul avis par utilisateur et par échange. L'avis ne peut être ni
+        modifié ni supprimé.
+      security:
+        - XUserID: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequest"
+      responses:
+        "201":
+          description: Avis enregistré
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+components:
+  securitySchemes:
+    XUserID:
+      type: apiKey
+      in: header
+      name: X-UserID
+      description: Identifiant numérique de l'utilisateur (pas d'authentification avancée).
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      description: Identifiant de la ressource
+      schema:
+        type: integer
+        minimum: 1
+        example: 1
+
+  responses:
+    BadRequest:
+      description: Requête invalide (validation, crédits insuffisants…)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Header `X-UserID` manquant ou invalide
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Action réservée à un autre utilisateur
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflit — réservation déjà en cours ou transition d'état impossible
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Categorie:
+      type: string
+      description: Catégorie d'échange (liste fermée)
+      enum:
+        - Informatique
+        - Jardinage
+        - Bricolage
+        - Cuisine
+        - Musique
+        - Langues
+        - Sport
+        - Tutorat
+        - Déménagement
+        - Photographie
+        - Animalier
+        - Couture
+        - Autre
+      example: Jardinage
+
+    Status:
+      type: string
+      description: Statut d'un échange
+      enum: [pending, accepted, rejected, cancelled, completed]
+      example: pending
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "le service 1 a déjà un échange en cours"
+
+    Skill:
+      type: object
+      required: [nom, niveau]
+      properties:
+        nom:
+          type: string
+          example: Jardinage
+        niveau:
+          type: string
+          enum: [débutant, intermédiaire, expert]
+          example: expert
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        pseudo:
+          type: string
+          example: Alice
+        bio:
+          type: string
+          example: Main verte du dimanche
+        ville:
+          type: string
+          example: Paris
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/Skill"
+        credit_balance:
+          type: integer
+          description: Somme du journal de transactions
+          example: 14
+        created_at:
+          type: string
+          format: date-time
+
+    UserRequest:
+      type: object
+      required: [pseudo]
+      properties:
+        pseudo:
+          type: string
+          example: Alice
+        bio:
+          type: string
+          example: Main verte du dimanche
+        ville:
+          type: string
+          example: Paris
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        provider_id:
+          type: integer
+          example: 1
+        titre:
+          type: string
+          example: Tonte de pelouse et taille de haies
+        description:
+          type: string
+          example: Matériel fourni
+        categorie:
+          $ref: "#/components/schemas/Categorie"
+        duree_minutes:
+          type: integer
+          example: 60
+        credits:
+          type: integer
+          description: Coût en crédits-temps
+          example: 4
+        ville:
+          type: string
+          example: Paris
+        actif:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+
+    ServiceRequest:
+      type: object
+      required: [titre, categorie, duree_minutes, credits]
+      properties:
+        titre:
+          type: string
+          example: Tonte de pelouse et taille de haies
+        description:
+          type: string
+          example: Matériel fourni
+        categorie:
+          $ref: "#/components/schemas/Categorie"
+        duree_minutes:
+          type: integer
+          minimum: 1
+          example: 60
+        credits:
+          type: integer
+          minimum: 1
+          example: 4
+        ville:
+          type: string
+          example: Paris
+        actif:
+          type: boolean
+          default: true
+
+    Exchange:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        service_id:
+          type: integer
+          example: 1
+        requester_id:
+          type: integer
+          description: Celui qui demande le service
+          example: 2
+        owner_id:
+          type: integer
+          description: Celui qui propose le service
+          example: 1
+        status:
+          $ref: "#/components/schemas/Status"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ExchangeRequest:
+      type: object
+      required: [service_id]
+      properties:
+        service_id:
+          type: integer
+          example: 1
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        exchange_id:
+          type: integer
+          example: 1
+        author_id:
+          type: integer
+          example: 2
+        target_id:
+          type: integer
+          example: 1
+        note:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 5
+        commentaire:
+          type: string
+          example: Pelouse impeccable, très pro
+        created_at:
+          type: string
+          format: date-time
+
+    ReviewRequest:
+      type: object
+      required: [note]
+      properties:
+        note:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 5
+        commentaire:
+          type: string
+          example: Pelouse impeccable, très pro
+
+    UserStats:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          example: 1
+        services_actifs:
+          type: integer
+          example: 2
+        echanges_completes:
+          type: integer
+          example: 1
+        credit_balance:
+          type: integer
+          example: 14
+        note_moyenne:
+          type: number
+          format: double
+          example: 5
+        nb_avis:
+          type: integer
+          example: 1
+        total_gagne:
+          type: integer
+          description: Crédits gagnés au total (bienvenue comprise)
+          example: 14
+        total_depense:
+          type: integer
+          description: Crédits dépensés au total (restitutions non déduites)
+          example: 3
