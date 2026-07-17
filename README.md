@@ -139,10 +139,10 @@ go test -v -cover ./...      # → coverage: 43.2% of statements
 
 | Mode                        | Couverture | Ce qui est exercé                                    |
 | --------------------------- | ---------- | ---------------------------------------------------- |
-| `TEST_DATABASE_URL` défini  | **71,5 %** | Tout, `sqlstore*.go` compris                          |
-| Sans base                   | 43,2 %     | Métier + API seulement ; `sqlstore*.go` non couvert   |
+| `TEST_DATABASE_URL` défini  | **71,5 %** | Tout, `store_postgres*.go` compris                          |
+| Sans base                   | 43,2 %     | Métier + API seulement ; `store_postgres*.go` non couvert   |
 
-L'écart s'explique en une ligne : `sqlstore.go` et `sqlstore_exchange.go` pèsent ~43 %
+L'écart s'explique en une ligne : `store_postgres.go` et `store_postgres_exchange.go` pèsent ~43 %
 des instructions et ne peuvent être exercés que contre un vrai PostgreSQL (transactions,
 index unique partiel, codes d'erreur `pq`). Les mocker n'aurait rien prouvé.
 
@@ -218,7 +218,7 @@ Points notables :
 
 - **Gestion d'erreurs idiomatique** : erreurs sentinelles (`ErrValidation`, `ErrNotFound`,
   `ErrConflict`…), enveloppées avec `%w` et discriminées via `errors.Is` pour produire le
-  bon code HTTP (`errors.go`).
+  bon code HTTP (`biz_errors.go`).
 - **Concurrence gérée par la base** : aucun mutex. L'unicité « un seul échange actif par
   service » est garantie par un index unique partiel PostgreSQL ; les mouvements de
   crédits et les transitions d'état se font dans des transactions SQL.
