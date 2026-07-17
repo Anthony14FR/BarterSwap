@@ -89,6 +89,26 @@ rejected           cancelled
 Le solde de chaque utilisateur est calculé à partir d'un **journal de transactions**
 (`credit_transactions`), pas d'un simple compteur, ce qui garantit la traçabilité.
 
+## Jeu de données de démonstration
+
+```bash
+go run . -seed
+# ou, via Docker :
+docker compose run --rm app go run . -seed
+```
+
+Insère 5 utilisateurs avec leurs compétences, 8 services répartis sur 3 villes,
+5 échanges (**un par statut** : `pending`, `accepted`, `rejected`, `cancelled`,
+`completed`) et 2 avis croisés — de quoi démontrer chaque filtre et chaque
+mouvement de crédits (blocage, transfert, restitution).
+
+Le seeder passe exclusivement par la couche métier (`App`), jamais par du SQL
+brut : il est donc incapable de produire un état qui violerait les règles de
+gestion. Il **refuse de s'exécuter si la base contient déjà des données**.
+
+> Note : les tests d'intégration vident la base qu'ils ciblent. Lancez les
+> tests *avant* le seed, ou pointez `TEST_DATABASE_URL` vers une base dédiée.
+
 ## Exemples d'utilisation
 
 ```bash
