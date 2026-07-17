@@ -40,6 +40,19 @@ Aucune authentification avancée : le client s'identifie via le header **`X-User
 (l'identifiant numérique de l'utilisateur). Les routes de lecture publiques n'en ont pas
 besoin ; les routes de création/modification l'exigent (sinon `401`).
 
+## Documentation interactive
+
+Le serveur expose sa propre documentation sur
+[http://localhost:8080/docs](http://localhost:8080/docs) : la spécification
+OpenAPI 3 (`docs/openapi.yaml`, écrite à la main) rendue par Swagger UI. Les
+fichiers statiques sont versionnés dans le dépôt et embarqués dans le binaire
+via `go:embed` — aucune dépendance Go supplémentaire, aucun CDN, la page
+fonctionne hors ligne.
+
+Le bouton **Authorize** renseigne le header `X-UserID` ; **Try it out**
+exécute de vraies requêtes contre le serveur. Un test (`http_docs_test.go`)
+vérifie que chaque route du serveur est documentée dans la spécification.
+
 ## Endpoints
 
 | Méthode  | Path                               | Auth | Description                                    |
